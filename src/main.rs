@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::env;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard};
+use std::fs;
 
 use rspotify::client::Spotify;
 use rspotify::oauth2::{SpotifyClientCredentials, SpotifyOAuth};
@@ -12,13 +13,19 @@ use serenity::framework::standard::{Args, CommandResult, macros::{
     group,
 }, StandardFramework};
 use serenity::model::channel::{Message, PrivateChannel};
-use serenity::prelude::TypeMapKey;
+use serenity::prelude::{TypeMapKey, TypeMap};
 use std::collections::hash_map::RandomState;
 
+use serde_json::json;
+use tokio::sync::RwLockWriteGuard;
+use serde::{Serialize, Serializer, Deserialize, Deserializer};
+use serde::ser::SerializeStruct;
+
+#[derive(Serialize, Deserialize)]
 struct SubscribeData {
     discord_user: u64,
     spotify_user: String,
-    spotify_channel: String
+    spotify_playlist: String
 }
 
 #[group]
@@ -58,9 +65,20 @@ async fn main() {
         .await
         .expect("Error creating client");
     {
+
+        // Load cache
+        let mut tokens = HashMap::new();
+        let mut subs = HashMap::new();
+        let cache_file = fs::read_to_string("tokens.json").unwrap_or("".to_string());
+        tokens = serde_json::from_str(&*cache_file).expect("Expected correct tokens.json file");
+        let subs_file = fs::read_to_string("subs.json");
+        if subs_file.is_ok() {
+            subs = serde_json::from_str(&*subs_file.unwrap()).expect("Expected correct subs.json file");
+        }
+
         let mut data = client.data.write().await;
-        data.insert::<SpotifyContainer>(HashMap::new());
-        data.insert::<SubscribeContainer>(HashMap::new());
+        data.insert::<SpotifyContainer>(tokens);
+        data.insert::<SubscribeContainer>(subs);
     }
 
     // start listening for events by starting a single shard
@@ -122,11 +140,12 @@ async fn follow(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
             let subscribe = SubscribeData {
                 discord_user: msg.author.id.0,
                 spotify_user: spotify_id,
-                spotify_channel: "".to_string()
+                spotify_playlist: playl
             };
 
             let mut map = data.get_mut::<SubscribeContainer>().expect("Expected subscription hashmap");
             map.insert(msg.channel_id.0, subscribe);
+            store_cache(data).await;
 
             msg.author.dm(&ctx.http, |m| m.content("Succesfully followed text channel!")).await?;
         },
@@ -198,8 +217,10 @@ async fn link(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
                 let mut map = data.get_mut::<SpotifyContainer>().expect("Expected spotify hashmap");
                 map.insert(msg.author.id.0, spotify);
 
+                store_cache(data).await;
                 msg.author.dm(&ctx.http, |m| m.content(welcome_msg)).await?;
                 println!("Linked new account, id {}", msg.author.id.0);
+
             },
             None => {
                 msg.author.dm(&ctx.http, |m| m.content("Failed to link account, did you enter the correct url? Try again by sending ~link")).await?;
@@ -208,4 +229,11 @@ async fn link(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
     }
 
     Ok(())
+}
+
+async fn store_cache(data: RwLockWriteGuard<'_, TypeMap>) {
+    let tokens = serde_json::to_string(data.get::<SpotifyContainer>().expect("Expected SpotifyContainer in context")).unwrap();
+    let subs = serde_json::to_string(data.get::<SubscribeContainer>().expect("Expected SubscribeContainer in context")).unwrap();
+    fs::write("tokens.json", tokens);
+    fs::write("subs.json", subs);
 }
