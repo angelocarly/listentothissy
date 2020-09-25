@@ -1,47 +1,50 @@
+use std::collections::hash_map::RandomState;
 use std::collections::HashMap;
 use std::env;
-use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard};
 use std::fs;
+use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard};
 
 use rspotify::client::Spotify;
 use rspotify::oauth2::{SpotifyClientCredentials, SpotifyOAuth};
 use rspotify::util::{generate_random_string, get_token, process_token, request_token};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::ser::SerializeStruct;
+use serde_json::json;
 use serenity::async_trait;
 use serenity::client::{Client, Context, EventHandler};
 use serenity::framework::standard::{Args, CommandResult, macros::{
     command,
     group,
+    hook,
 }, StandardFramework};
 use serenity::model::channel::{Message, PrivateChannel};
-use serenity::prelude::{TypeMapKey, TypeMap};
-use std::collections::hash_map::RandomState;
-
-use serde_json::json;
+use serenity::prelude::{TypeMap, TypeMapKey};
 use tokio::sync::RwLockWriteGuard;
-use serde::{Serialize, Serializer, Deserialize, Deserializer};
-use serde::ser::SerializeStruct;
 
 #[derive(Serialize, Deserialize)]
 struct SubscribeData {
     discord_user: u64,
     spotify_user: String,
-    spotify_playlist: String
+    spotify_playlist: String,
 }
 
+
 #[group]
-#[commands(link, follow)]
+#[commands(link, follow, update)]
 struct General;
 
 struct Handler;
 
 // A mapping of discord user id's to spotify objects
 struct SpotifyContainer;
+
 impl TypeMapKey for SpotifyContainer {
     type Value = HashMap<u64, Spotify>;
 }
 
 // A mapping of discord channels to subscribe data
 struct SubscribeContainer;
+
 impl TypeMapKey for SubscribeContainer {
     type Value = HashMap<u64, SubscribeData>;
 }
@@ -55,6 +58,7 @@ async fn main() {
     // Discord setup
     let framework = StandardFramework::new()
         .configure(|c| c.prefix("~")) // set the bot's prefix to "~"
+        .normal_message(normal_message)
         .group(&GENERAL_GROUP);
 
     // Login with a bot token from the environment
@@ -69,8 +73,10 @@ async fn main() {
         // Load cache
         let mut tokens = HashMap::new();
         let mut subs = HashMap::new();
-        let cache_file = fs::read_to_string("tokens.json").unwrap_or("".to_string());
-        tokens = serde_json::from_str(&*cache_file).expect("Expected correct tokens.json file");
+        let cache_file = fs::read_to_string("tokens.json");
+        if cache_file.is_ok() {
+            tokens = serde_json::from_str(&*cache_file.unwrap()).expect("Expected correct tokens.json file");
+        }
         let subs_file = fs::read_to_string("subs.json");
         if subs_file.is_ok() {
             subs = serde_json::from_str(&*subs_file.unwrap()).expect("Expected correct subs.json file");
@@ -87,34 +93,64 @@ async fn main() {
     }
 }
 
-// #[command]
-// async fn add(ctx: &Context, msg: &Message) -> CommandResult {
-//
-//     // Retrieve spotify context
-//     let data = ctx.data.read().await;
-//     let spotify = data.get::<SpotifyContainer>().expect("Expected SpotifyContainer in context");
-//
-//     let url = msg.content.split_whitespace().nth(1).unwrap_or("");
-//     if url.starts_with("https://open.spotify.com/track/") {
-//         let track_data = spotify.track(url).await;
-//         let track_id = url.split('/').last().unwrap().split('?').next().unwrap();
-//         let track_uri = format!("spotify:track:{}", track_id);
-//
-//         let name = track_data.unwrap().name;
-//         println!("Adding {} to playlist", url);
-//         let profile = env::var("SPOTIFY_PROFILE").expect("Expected spotify profile");
-//         let playlist = env::var("SPOTIFY_PLAYLIST").expect("Expected spotify playlist");
-//         let res = spotify.user_playlist_add_tracks(&*profile, &*playlist, &*vec![track_uri], Option::from(0)).await;
-//         msg.reply(ctx, format!("Added {:?} to playlist", name)).await?;
-//         println!("{:?}", res);
-//     }
-//
-//     Ok(())
-// }
+#[hook]
+async fn normal_message(ctx: &Context, msg: &Message) {
+    let mut data = ctx.data.write().await;
+    let subs = data.get::<SubscribeContainer>().expect("Expected subscription hashmap");
+
+    match subs.get(&msg.channel_id.0) {
+        Some(subData) => {
+            if let Some(link) = search_spotify_link(&msg.content) {
+                match data.get::<SpotifyContainer>().expect("Expected SpotifyContainer in context").get(&msg.author.id.0) {
+                    Some(spotify) => {
+                        // msg.reply(ctx, format!("Added {:?} to playlist", link.clone())).await;
+                        add_track(spotify, &subData.spotify_user, &subData.spotify_playlist, link).await;
+                    },
+                    None => {}
+                }
+            }
+        },
+        None => {}
+    }
+}
+
+// Parse a discord message to find a clean spotify url
+fn search_spotify_link(message: &str) -> Option<String> {
+    if !message.contains("https://open.spotify.com/track/") {
+        return None
+    }
+
+    // Ignore strings starting with '>'
+    for i in message.split('\n') {
+        if !i.starts_with('>') {
+            for j in i.split(' ') {
+                if j.starts_with("https://open.spotify.com/track/") {
+                    return Some(j.to_string());
+                }
+            }
+        }
+    }
+    None
+}
+
+async fn add_track(spotify: &Spotify, user: &String, playlist: &String, track: String)  {
+
+    println!("{:?}", track);
+    if track.starts_with("https://open.spotify.com/track/") {
+        let track_data = spotify.track(&*track).await;
+        let track_id = track.split('/').last().unwrap().split('?').next().unwrap();
+        let track_uri = format!("spotify:track:{}", track_id);
+        println!("{:?}", track_uri);
+
+        let name = track_data.unwrap().name;
+        let res = spotify.user_playlist_add_tracks(&*user, &*playlist, &*vec![track_uri], Option::from(0)).await;
+        println!("{:?}", res);
+    }
+
+}
 
 #[command]
 async fn follow(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
-
     let mut data = ctx.data.write().await;
     let map = data.get::<SpotifyContainer>().expect("Expected SpotifyContainer in context");
 
@@ -128,27 +164,37 @@ async fn follow(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
                 return Ok(());
             }
 
-            // Verify if user owns the playlist
-            let spotify_id = spotify.me().await.unwrap().id;
-            let playl = spotify.user_playlist(&spotify_id, Some(&mut playlist), None, None).await.unwrap().id;
-            if !playlist.ends_with(playl.as_str()) {
-                msg.author.dm(&ctx.http, |m| m.content("You do not own this playlist")).await?;
-                return Ok(());
+            // Verify token validity and if user owns the playlist
+            match spotify.me().await {
+                Ok(user) => {
+
+                    let spotify_id = user.id;
+                    let playl = spotify.user_playlist(&spotify_id, Some(&mut playlist), None, None).await.unwrap().id;
+                    if !playlist.ends_with(playl.as_str()) {
+                        msg.author.dm(&ctx.http, |m| m.content("You do not own this playlist")).await?;
+                        return Ok(());
+                    }
+
+                    // Insert subscribe data
+                    let subscribe = SubscribeData {
+                        discord_user: msg.author.id.0,
+                        spotify_user: spotify_id,
+                        spotify_playlist: playl,
+                    };
+
+                    let mut map = data.get_mut::<SubscribeContainer>().expect("Expected subscription hashmap");
+                    map.insert(msg.channel_id.0, subscribe);
+                    store_cache(data).await;
+
+                    msg.author.dm(&ctx.http, |m| m.content("Succesfully followed text channel!")).await?;
+
+                },
+                // User data could not be retrieved
+                Err(e) => {
+                    msg.author.dm(&ctx.http, |m| m.content(format!("An error occurred:{}", e.to_string()))).await?;
+                }
             }
-
-            // Insert subscribe data
-            let subscribe = SubscribeData {
-                discord_user: msg.author.id.0,
-                spotify_user: spotify_id,
-                spotify_playlist: playl
-            };
-
-            let mut map = data.get_mut::<SubscribeContainer>().expect("Expected subscription hashmap");
-            map.insert(msg.channel_id.0, subscribe);
-            store_cache(data).await;
-
-            msg.author.dm(&ctx.http, |m| m.content("Succesfully followed text channel!")).await?;
-        },
+        }
         None => {
             msg.author.dm(&ctx.http, |m| m.content("Your account is not linked yet. Message ~link to link it.")).await?;
         }
@@ -159,11 +205,24 @@ async fn follow(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
 }
 
 /*
+ * A test command that refreshes the user's token
+ */
+#[command]
+async fn update(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
+
+    let mut data = ctx.data.write().await;
+    let mut spotifyData = data.get_mut::<SpotifyContainer>().expect("Expected SpotifyContainer in context");
+
+    update_credentials(spotifyData.get_mut(&228235814985924608u64).unwrap()).await;
+    store_cache(data).await;
+
+    Ok(())
+}
+/*
  * Link spotify account to discord id
  */
 #[command]
 async fn link(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
-
     if args.message().is_empty() {
 
         // ~link command was empty, check if id is already linked
@@ -184,11 +243,9 @@ async fn link(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
                 let auth_url = oauth.get_authorize_url(Some(&state), None);
                 let message = format!("In order to link your account, go to the following url, allow access and send me the final url like this: ~link <url>\n{}", auth_url);
                 msg.author.dm(&ctx.http, |m| m.content(message)).await?;
-
             }
         }
-    }
-    else {
+    } else {
 
         // A message was given with the ~link command, try to complete the authorization
         let mut oauth = SpotifyOAuth::default()
@@ -220,8 +277,7 @@ async fn link(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
                 store_cache(data).await;
                 msg.author.dm(&ctx.http, |m| m.content(welcome_msg)).await?;
                 println!("Linked new account, id {}", msg.author.id.0);
-
-            },
+            }
             None => {
                 msg.author.dm(&ctx.http, |m| m.content("Failed to link account, did you enter the correct url? Try again by sending ~link")).await?;
             }
@@ -232,8 +288,33 @@ async fn link(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
 }
 
 async fn store_cache(data: RwLockWriteGuard<'_, TypeMap>) {
-    let tokens = serde_json::to_string(data.get::<SpotifyContainer>().expect("Expected SpotifyContainer in context")).unwrap();
-    let subs = serde_json::to_string(data.get::<SubscribeContainer>().expect("Expected SubscribeContainer in context")).unwrap();
+    let tokens = serde_json::to_string_pretty(data.get::<SpotifyContainer>().expect("Expected SpotifyContainer in context")).unwrap();
+    let subs = serde_json::to_string_pretty(data.get::<SubscribeContainer>().expect("Expected SubscribeContainer in context")).unwrap();
     fs::write("tokens.json", tokens);
     fs::write("subs.json", subs);
+}
+
+async fn verify_credentials(mut spotify: &mut Spotify) -> bool {
+    false
+}
+
+async fn update_credentials(mut spotify: &mut Spotify) {
+
+    let oauth = SpotifyOAuth::default()
+        .scope("playlist-modify-public")
+        .build();
+
+    let refresh_token = spotify.client_credentials_manager.as_ref().unwrap().token_info.as_ref().unwrap().refresh_token.as_ref().unwrap();
+
+    let token_info = oauth.refresh_access_token(&*refresh_token).await.unwrap();
+
+    // Building the client credentials, now with the access token.
+    let client_credential = SpotifyClientCredentials::default()
+        .token_info(token_info)
+        .build();
+
+    // Initializing the Spotify client finally.
+    spotify = &mut Spotify::default()
+        .client_credentials_manager(client_credential)
+        .build();
 }
