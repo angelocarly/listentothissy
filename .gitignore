@@ -15,5 +15,6 @@ Cargo.lock
 /target
 
 .spotify_token_cache.json
-tokens.json
-subs.json
+/cache
+cache/tokens.json
+cache/subs.json

@@ -73,11 +73,11 @@ async fn main() {
         // Load cache
         let mut tokens = HashMap::new();
         let mut subs = HashMap::new();
-        let cache_file = fs::read_to_string("tokens.json");
+        let cache_file = fs::read_to_string("cache/tokens.json");
         if cache_file.is_ok() {
             tokens = serde_json::from_str(&*cache_file.unwrap()).expect("Expected correct tokens.json file");
         }
-        let subs_file = fs::read_to_string("subs.json");
+        let subs_file = fs::read_to_string("cache/subs.json");
         if subs_file.is_ok() {
             subs = serde_json::from_str(&*subs_file.unwrap()).expect("Expected correct subs.json file");
         }
@@ -290,8 +290,8 @@ async fn link(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
 async fn store_cache(data: RwLockWriteGuard<'_, TypeMap>) {
     let tokens = serde_json::to_string_pretty(data.get::<SpotifyContainer>().expect("Expected SpotifyContainer in context")).unwrap();
     let subs = serde_json::to_string_pretty(data.get::<SubscribeContainer>().expect("Expected SubscribeContainer in context")).unwrap();
-    fs::write("tokens.json", tokens);
-    fs::write("subs.json", subs);
+    fs::write("cache/tokens.json", tokens);
+    fs::write("cache/subs.json", subs);
 }
 
 async fn verify_credentials(mut spotify: &mut Spotify) -> bool {
