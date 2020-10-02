@@ -18,7 +18,7 @@ async fn follow(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
 
             // Verify token validity
             let mut val: Spotify;
-            if !is_valid_token(&spotify).await {
+            if !is_valid_token(&spotify) {
                 val = get_refresh_credentials(&spotify).await;
                 spotify = &mut val;
             }

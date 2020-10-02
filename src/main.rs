@@ -18,6 +18,7 @@ use commands::follow::*;
 use commands::link::*;
 
 use crate::util::{check_update_token, get_refresh_credentials, is_valid_token, update_cache};
+use std::time::UNIX_EPOCH;
 
 mod commands;
 mod util;
@@ -53,6 +54,7 @@ impl EventHandler for Handler {}
 
 #[tokio::main]
 async fn main() {
+
 
     // Discord setup
     let framework = StandardFramework::new()

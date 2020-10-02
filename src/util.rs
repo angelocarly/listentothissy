@@ -4,6 +4,7 @@ use rspotify::oauth2::{SpotifyOAuth, SpotifyClientCredentials};
 use std::fs;
 use crate::ThissyData;
 use std::error::Error;
+use std::time::UNIX_EPOCH;
 
 pub fn update_cache(thissy_data: &ThissyData) {
     let thissy_string = serde_json::to_string_pretty(thissy_data).expect("Failed to parse thissy_data");
@@ -15,7 +16,7 @@ pub fn update_cache(thissy_data: &ThissyData) {
  * @returns whether token is updated
  */
 pub async fn check_update_token(mut spotify: &mut Spotify) -> bool {
-    let valid = is_valid_token(spotify).await;
+    let valid = is_valid_token(spotify);
 
     if !valid {
         spotify = &mut get_refresh_credentials(spotify).await;
@@ -24,8 +25,12 @@ pub async fn check_update_token(mut spotify: &mut Spotify) -> bool {
     false
 }
 
-pub async fn is_valid_token(spotify: &Spotify) -> bool {
-    false
+pub fn is_valid_token(spotify: &Spotify) -> bool {
+
+    let unixtime = std::time::SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+
+    let credential = spotify.client_credentials_manager.clone().unwrap();
+    return ((unixtime + 10) as i64) < credential.token_info.unwrap().expires_at.unwrap();
 }
 
 pub async fn get_refresh_credentials(spotify: &Spotify) -> Spotify {
