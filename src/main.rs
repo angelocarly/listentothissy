@@ -6,8 +6,7 @@ use rspotify::client::Spotify;
 use serde::{Deserialize, Serialize};
 use serenity::async_trait;
 use serenity::client::{Client, Context};
-use serenity::framework::standard::{CommandResult, macros::{
-    command,
+use serenity::framework::standard::{macros::{
     group,
     hook,
 }, StandardFramework};
@@ -16,9 +15,11 @@ use serenity::prelude::{EventHandler, TypeMapKey};
 
 use commands::follow::*;
 use commands::link::*;
+use commands::info::*;
+use commands::purge::*;
+use commands::unlink::*;
 
 use crate::util::{get_refresh_credentials, is_valid_token, update_cache};
-use std::time::UNIX_EPOCH;
 
 mod commands;
 mod util;
@@ -35,9 +36,16 @@ pub struct ThissyData {
     subdata: HashMap<u64, SubscribeData>,
     spotify_map: HashMap<u64, Spotify>,
 }
+impl ThissyData {
+    pub fn get_subs_by_discord_user(&self, discord_user: &u64) -> Vec<u64> {
+        self.subdata.iter()
+             .filter_map(|(key, val)| if &val.discord_user == discord_user { Some(key.clone()) } else { None })
+             .collect()
+    }
+}
 
 #[group]
-#[commands(link, update, follow)]
+#[commands(link, follow, info, purge, unlink)]
 struct General;
 
 struct Handler;
@@ -74,7 +82,7 @@ async fn main() {
         let mut data = client.data.write().await;
 
         // Load cache
-        let mut thissy_data;
+        let thissy_data;
         let cache_string = fs::read_to_string("cache/cache.json");
         if !cache_string.is_err() {
             thissy_data = serde_json::from_str::<ThissyData>(cache_string.unwrap().as_str()).expect("Couldn't parse cache");
@@ -115,7 +123,7 @@ async fn normal_message(ctx: &Context, msg: &Message) {
                 if let Some(link) = search_spotify_link(&msg.content) {
 
                     // Obtain a reference to the user subscribed to this channel
-                    if let Some(mut spotify) = thissy_data.spotify_map.get_mut(&msg.author.id.0) {
+                    if let Some(spotify) = thissy_data.spotify_map.get_mut(&msg.author.id.0) {
 
                         // Verify token validity and refresh
                         if !is_valid_token(&spotify) {
@@ -163,7 +171,7 @@ fn search_spotify_link(message: &str) -> Option<String> {
  *  Adds a track to a playlist
  *  @param spotify, a valid spotify object
  */
-async fn add_track(mut spotify: &mut Spotify, user: &String, playlist: &String, track: String) {
+async fn add_track(spotify: &mut Spotify, user: &String, playlist: &String, track: String) {
     println!("Adding track {:?} to playlist {}", track, playlist);
     if track.starts_with("https://open.spotify.com/track/") {
 
@@ -184,20 +192,5 @@ async fn add_track(mut spotify: &mut Spotify, user: &String, playlist: &String, 
             }
         }
     }
-}
-
-
-/*
- * A test command that refreshes the user's token
- */
-#[command]
-async fn update(ctx: &Context) -> CommandResult {
-    let mut data = ctx.data.write().await;
-    // let spotify_data = data.get_mut::<SpotifyContainer>().expect("Expected SpotifyContainer in context");
-
-    // get_refresh_credentials(spotify_data.get_mut(&228235814985924608u64).unwrap()).await;
-    // store_cache(data).await;
-
-    Ok(())
 }
 

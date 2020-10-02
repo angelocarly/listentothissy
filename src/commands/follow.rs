@@ -1,8 +1,7 @@
 use serenity::client::{Context};
 use serenity::framework::standard::{Args, CommandResult, macros::{
     command,
-    hook,
-}, StandardFramework};
+}};
 use serenity::model::channel::{Message};
 use crate::{SubscribeData, ThissyContainer};
 use crate::util::{update_cache, is_valid_token, get_refresh_credentials};

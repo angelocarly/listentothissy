@@ -1,9 +1,7 @@
-use serenity::prelude::TypeMap;
 use rspotify::client::Spotify;
 use rspotify::oauth2::{SpotifyOAuth, SpotifyClientCredentials};
 use std::fs;
 use crate::ThissyData;
-use std::error::Error;
 use std::time::UNIX_EPOCH;
 
 pub fn update_cache(thissy_data: &ThissyData) {
@@ -39,3 +37,8 @@ pub async fn get_refresh_credentials(spotify: &Spotify) -> Spotify {
         .client_credentials_manager(client_credential)
         .build();
 }
+
+pub fn create_spotify_playlist_link(uri: &str) -> String {
+    return "https://open.spotify.com/playlist/".to_string() + uri;
+}
+

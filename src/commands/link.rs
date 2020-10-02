@@ -2,15 +2,11 @@
 use rspotify::client::Spotify;
 use rspotify::oauth2::{SpotifyClientCredentials, SpotifyOAuth};
 use rspotify::util::{generate_random_string, process_token};
-use serde::{Deserialize, Serialize};
 use serenity::client::{Context};
 use serenity::framework::standard::{Args, CommandResult, macros::{
     command,
-    group,
-    hook,
-}, StandardFramework};
+}};
 use serenity::model::channel::{Message};
-use serenity::prelude::{TypeMap, TypeMapKey};
 use crate::util::update_cache;
 use crate::ThissyContainer;
 
@@ -20,7 +16,7 @@ use crate::ThissyContainer;
 #[command]
 async fn link(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
     let mut data = ctx.data.write().await;
-    let mut thissy_data = data.get_mut::<ThissyContainer>().expect("Expected ThissyContainer in context");
+    let thissy_data = data.get_mut::<ThissyContainer>().expect("Expected ThissyContainer in context");
 
     if args.message().is_empty() {
 
