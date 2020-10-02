@@ -11,20 +11,6 @@ pub fn update_cache(thissy_data: &ThissyData) {
     fs::write("cache/cache.json", thissy_string).expect("Wasn't able to write to cache file");
 }
 
-/*
- * Check and update a spotify token, if invalid update it
- * @returns whether token is updated
- */
-pub async fn check_update_token(mut spotify: &mut Spotify) -> bool {
-    let valid = is_valid_token(spotify);
-
-    if !valid {
-        spotify = &mut get_refresh_credentials(spotify).await;
-        return true;
-    }
-    false
-}
-
 pub fn is_valid_token(spotify: &Spotify) -> bool {
 
     let unixtime = std::time::SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();

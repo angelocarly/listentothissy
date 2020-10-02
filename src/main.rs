@@ -17,7 +17,7 @@ use serenity::prelude::{EventHandler, TypeMapKey};
 use commands::follow::*;
 use commands::link::*;
 
-use crate::util::{check_update_token, get_refresh_credentials, is_valid_token, update_cache};
+use crate::util::{get_refresh_credentials, is_valid_token, update_cache};
 use std::time::UNIX_EPOCH;
 
 mod commands;
@@ -115,10 +115,11 @@ async fn normal_message(ctx: &Context, msg: &Message) {
                 if let Some(link) = search_spotify_link(&msg.content) {
 
                     // Obtain a reference to the user subscribed to this channel
-                    if let Some(spotify) = thissy_data.spotify_map.get_mut(&msg.author.id.0) {
+                    if let Some(mut spotify) = thissy_data.spotify_map.get_mut(&msg.author.id.0) {
 
                         // Verify token validity and refresh
-                        if check_update_token(spotify).await {
+                        if !is_valid_token(&spotify) {
+                            *spotify = get_refresh_credentials(&spotify).await;
                             updated_cache = true;
                         }
 
