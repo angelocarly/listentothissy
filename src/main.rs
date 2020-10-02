@@ -123,7 +123,7 @@ async fn normal_message(ctx: &Context, msg: &Message) {
                         }
 
                         // Add the track to the playlist
-                        msg.reply(ctx, format!("Added {:?} to playlist", link.clone())).await;
+                        // msg.reply(ctx, format!("Added {:?} to playlist", link.clone())).await;
                         add_track(spotify, &sub_data.spotify_user, &sub_data.spotify_playlist, link).await;
                     }
                 }
