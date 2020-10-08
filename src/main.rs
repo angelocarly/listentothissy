@@ -123,7 +123,7 @@ async fn normal_message(ctx: &Context, msg: &Message) {
                 if let Some(link) = search_spotify_link(&msg.content) {
 
                     // Obtain a reference to the user subscribed to this channel
-                    if let Some(spotify) = thissy_data.spotify_map.get_mut(&msg.author.id.0) {
+                    if let Some(spotify) = thissy_data.spotify_map.get_mut(&sub_data.discord_user) {
 
                         // Verify token validity and refresh
                         if !is_valid_token(&spotify) {
